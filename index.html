@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<html>
+  <head>
+    <style>
+      rect.bordered {
+        stroke: #E6E6E6;
+        stroke-width:2px;   
+      }
+
+      text.mono {
+        font-size: 11px;
+        font-family: Consolas, courier;
+        /*fill: #aaa;*/
+      }
+
+      text.axis-workweek {
+        fill: #000;
+      }
+
+      text.axis-worktime {
+        fill: #000;
+      }
+
+    .axis path, .axis tick, .axis line .axis text{
+          fill: none;
+          stroke: none;
+          /*font-size: 9pt;*/
+      }
+
+   div.tooltip {  
+      position: absolute;     
+      text-align: center;     
+      width: 80px;          
+      height: 20px;         
+      padding: 2px;       
+      font-family: Consolas, courier;  
+      font-size: 14px;  
+      text-align: center;  
+      color: white;  
+      border-width: 2px solid black;  
+      background-color: black;  
+      border-radius: 5px;  
+      border-bottom: 12px solid black;  
+      border-right: 12px solid transparent;  
+      border-left: 12px solid transparent;    
+  }
+
+    </style>
+    <script src="http://d3js.org/d3.v3.js"></script>
+  </head>
+  <body>
+    <div id="chart"></div>
+    <div id="dataset-picker">
+    </div>
+    <script type="text/javascript">
+
+      d3.csv("insti_sub_text.csv", function(data){
+
+
+        ///////////////////////////////////////////////////////////////////////////
+        //////////////// Data Related ///////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        rowArray = [];
+        rowNameList = Object.keys(data[0]);
+        rowNameList = rowNameList.slice(2, rowNameList.length - 2);
+
+        sortedRowNameList = [];
+
+        newRowNameList = []
+        rowCount = data[data.length - 1]
+        for (var i = 0; i < rowNameList.length; i++) {
+          var name = rowNameList[i];
+          var count = +rowCount[name];
+          rowArray.push({
+            'name': name,
+            'count': count
+          })
+          newRowNameList.push(name);
+          sortedRowNameList.push(name);
+        };
+        // rowArrayLength = Object.keys(rowArray).length;
+
+        console.log(' row array ', rowArray.length);
+
+        //colarray & matrix
+        colArray = [];   
+        colNameList = []; 
+        colRankSet = new Set();
+
+        sortedColNameList = [];
+
+        matrix = [];
+        for (var i = 0; i < data.length - 1; i++) {
+          var row = data[i];
+          var name = row['学科名字'];
+          var rank = +row['排名'];
+          var count = +row['机构总人数']
+          var contrilist = [];
+          for (var j = 0; j < newRowNameList.length; j++) {
+            var contri = +row[newRowNameList[j]];
+            if(contri == "")
+              contri = -2
+            contrilist.push(contri);
+
+            sortedColNameList.push(name);
+          };
+          matrix.push(contrilist);
+
+          var sub = {
+            'name': name,
+            'rank': rank,
+            'count': count,
+          }
+          colArray.push(sub);
+          colNameList.push(name);
+          colRankSet.add(rank);
+        };
+
+         ///////////////////////////////////////////////////////////////////////////
+        //////////////// Matrix Rendering Related ///////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+         var margin = { top: 80, right: 50, bottom: 100, left: 150 },
+          width = 1200 - margin.left - margin.right,
+          height = 900 - margin.top - margin.bottom,
+          gridSize = {
+            'w': Math.floor(width / (colArray.length)),
+            'h': Math.floor(height / (rowArray.length + 20)),
+          }
+          legendElementWidth = gridSize['h'] * 2,
+          title_left = width/4 + 20,
+
+          buckets = 9,
+          colors = ["#ffffd9","#edf8b1","#c7e9b4","#7fcdbb","#41b6c4","#1d91c0","#225ea8","#253494","#081d58"], 
+          linearcolor = ["#c7e9c0", "#005a32"],
+       
+          matrix_colorlegendheight = rowArray.length * gridSize['h'] + 10;
+
+          var svg = d3.select("#chart").append("svg")
+              .attr("width", width + margin.left + margin.right)
+              .attr("height", height + margin.top + margin.bottom)
+              .append("g")
+              .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+          var rowLabels = svg.selectAll(".rowLabel")
+              .data(rowArray)
+              .enter().append("text")
+              .attr('id', function(d, i){
+                return 'row-text-' + i;
+              })
+              .text(function (d) { return d.name;})
+              .attr("x", 0)
+              .attr("y", 0)//return i * gridSize; })
+              .style("text-anchor", "end")
+              .style("transform", function(d, i){
+                return 'translate(0px, ' + gridSize['h'] * (i+1) + 'px)';
+              })
+              .attr("class", function (d, i) { return 'row-text ' + ((i >= 0 && i <= 4) ? "rowLabel mono axis axis-workweek" : "rowLabel mono axis"); })
+
+
+          svg.append('rect')
+          .attr('class', 'colRank')
+          .attr('width', gridSize['h'])
+          .attr('height', gridSize['h'])
+          .attr('x', -50)
+          .attr('y', -50)
+          .style('fill', 'gray')
+          .on('mouseover', function(){
+            d3.select(this)
+            .style('stroke', 'black');
+          })
+          .on('mouseout', function(){
+            d3.select(this)
+            .style('stroke', 'none');
+          })
+          .on('click', clickColRank);
+
+            // var rowRank = function(){
+            //   console.log(" rank col ");
+            // }
+
+           
+          var rowAttrBars = svg.selectAll(".rowAttBar")
+              .data(rowArray)
+              .enter().append("g");
+
+              rowAttrBars
+              .append('rect')
+              .attr("class", 'rowAttBar')
+              .attr('id', function(d, i){
+                return 'row-bar-' + i;
+              })
+              .attr("x", gridSize['w'] * colArray.length)
+              .attr("y", function (d, i) { return i * gridSize['h']; })//return i * gridSize; })
+              .attr("width", function(d, i){
+                return d.count * 0.15;
+              })
+              .attr("height", gridSize['h'] * 0.9)
+              .style('fill', 'gray');
+
+              rowAttrBars
+              .append('text')
+              .text(function(d, i){
+                return d.count
+              })
+              .attr("class", 'rowAttText text.mono')
+              .style('font-size', '11px')
+              .style('text-anchor', 'begin')
+              .style('visibility', 'hidden')
+              .attr('id', function(d, i){
+                return 'row-bartext-' + i;
+              })
+              .attr("x", function(d, i){
+                return gridSize['w'] * colArray.length + d.count * 0.15 + 3;
+              })
+              .attr("y", function(d, i){ 
+                return (i+1) * gridSize['h'];
+              });
+              
+          //title  
+          // svg.append("text")
+          //     // .attr("class", "mono")
+          //     .attr("x", 0)
+          //     .attr("y", 0)
+          //     .style("font-size", '12pt')
+          //     .attr("transform", "translate(" + title_left + ", -50 )")
+          //     .style("text-anchor", "middle")
+          //     .text("2016年 支援中西部地区招生协作计划（高职）");    
+
+          // svg.append("text")
+          // // .attr("class", "mono")
+          // .attr("x", 0)
+          // .attr("y", 0)
+          // .style("font-size", '9pt')
+          // .attr("transform", "translate(" + title_left + ", -35 )")
+          // .style("text-anchor", "middle")
+          // .text("(行：输出省份；列：输入省份)");   
+          
+          var colLabel = svg.selectAll(".timeLabel")
+              .data(colArray)
+              .enter().append("text")
+              .attr('id', function(d, i){
+                return 'col-text-' + i;
+              })
+              .text(function(d) { return d.name; })            
+              .attr("class", function(d, i) { 
+                return 'col-text '+ ((i >= 7 && i <= 16) ? "timeLabel mono axis axis-worktime" : "timeLabel mono axis"); })
+              .attr("x", 0)//function(d, i) { return 7 + i * gridSize; })
+              .attr("y", 0)
+              .style("text-anchor", "left")
+              .style("transform", function(d, i){
+                return "translate(" + (i+0.5) * gridSize['w'] + "px, 0px)" +  " rotate(-45deg)";
+              }); //translate(" + gridSize / 2 + ", 0) 
+
+             var colAttrBars = svg.selectAll(".colAttBar")
+              .data(colArray)
+              .enter().append('g');
+
+              colAttrBars
+              .append("rect")
+              .attr("class", 'colAttBar')
+              .attr('id', function(d, i){
+                return 'col-bar-' + i;
+              })
+              .text(function (d) { return d.count;})
+              .attr("x", function (d, i) { return i * gridSize['w']; })
+              .attr("y", gridSize['h'] * rowArray.length)//return i * gridSize; })
+              .attr("width", gridSize['h'] * 0.9)
+              .attr("height", function(d, i){
+                return d.count * 0.15;
+              })
+              .style('fill', 'gray');
+
+              colAttrBars
+              .append('text')
+              .text(function(d, i){
+                return d.count;
+              })
+              .attr("class", 'colAttText text.mono')
+              .style('font-size', '11px')
+              .style('text-anchor', 'top')
+              .style('visibility', 'hidden')
+              .attr('id', function(d, i){
+                return 'col-bartext-' + i;
+              })
+              .attr("x", function(d, i){
+                return i * gridSize['w']; 
+              })
+              .attr("y", function(d, i){ 
+                return gridSize['h'] * rowArray.length + d.count * 0.15 + 13;
+              });
+
+          //添加一个提示框  
+          var tipdiv = d3.select("body").append("div") 
+                    .attr("class", "tooltip")       
+                    .style("opacity", 0);
+
+            //cover a whole bg-rect
+            // svg.append('rect')
+            // .attr('class', 'bg-rect')
+            // .attr('width', gridSize['w'] * colArray.length)
+            // .attr('height', gridSize['h'] * rowArray.length)
+            // .attr('x', 0)
+            // .attr('y', 0)
+            // .style('fill', 'none')
+            // .style('stroke', 'red')
+            // .on('mouseleave', function(){            
+            //       d3.selectAll('.bg-col').style('visibility', 'hidden');
+            //       d3.selectAll('.bg-row').style('visibility', 'hidden');
+            //       d3.selectAll('.col-text').style('stroke', 'none');
+            //       d3.selectAll('.row-text').style('stroke', 'none');
+            //       d3.select('.tooltip').style('opacity', '0.0');
+            //       console.log(" xxx 2 ");
+            // });
+
+
+            var highlightColRow = function(colindex, rowindex, bgcolindex, bgrowindex){
+              console.log('highlight col row', colindex, rowindex);
+               //clear
+                d3.selectAll('.bg-col').style('visibility', 'hidden');
+                d3.selectAll('.bg-row').style('visibility', 'hidden');
+                d3.selectAll('.row-text').style('stroke', 'none');
+                d3.selectAll('.col-text').style('stroke', 'none');
+                d3.selectAll('.rowAttBar').style('stroke', 'none');
+                d3.selectAll('.colAttBar').style('stroke', 'none');
+                d3.selectAll('.rowAttText').style('visibility', 'hidden');
+                d3.selectAll('.colAttText').style('visibility', 'hidden');
+
+                d3.select('#bg-col-' + bgcolindex).style('visibility', 'visible');
+                d3.select('#bg-row-' + bgrowindex).style('visibility', 'visible');
+
+
+                //highlight the label
+                d3.select('#col-text-' + colindex)
+                .style('stroke', 'black')
+                .style('stroke-width', '2px');
+                d3.select('#col-bar-' + colindex)
+                .style('stroke', 'black')
+                .style('stroke-width', '2px');
+                d3.select('#col-bartext-' + colindex).style('visibility', 'visible');
+
+
+                d3.select('#row-text-' + rowindex)            
+                .style('stroke', 'black');
+                d3.select("#row-bar-" + rowindex).style('stroke', 'black');
+                d3.select('#row-bartext-' + rowindex).style('visibility', 'visible');
+            }
+
+            var heatmapChart = function() {
+
+              var maxflow_temp = null, minflow_temp = 10000;        
+
+              for (var i = 0; i < matrix.length; i++) {
+                  var rowindex = i + 1;
+                  var eachrow_temp = matrix[i];
+
+                  maxflow_temp = Math.max(maxflow_temp, Math.max(...eachrow_temp));
+                  minflow_temp = Math.min(minflow_temp, Math.min(...eachrow_temp));
+              }
+                  
+              // var colorScale = d3.scale.quantile()
+              //     .domain([0, buckets - 1, maxflow_temp])
+              //     .range(colors);
+              var colorScale = d3.scale.linear()
+              .domain([minflow_temp, maxflow_temp])
+              .range(linearcolor);
+
+              //add row 
+
+              for (var i = 0; i < matrix.length; i++) {
+
+                // var rowindex = i + 1;
+                var colindex = i;
+                var eachcol_temp = matrix[i];
+
+                if(i == 0){
+                  //add the row background   
+                  for(var j = 0; j < eachcol_temp.length; j ++){                
+                    svg.append('rect')
+                    .attr('id', 'bg-row-' + j)
+                    .attr('class', 'bg-row')
+                    .attr('x', 0)
+                    .attr('y', j * gridSize['h'])
+                    .attr('width', gridSize['w'] * colArray.length)
+                    .attr('height', gridSize['h'])
+                    .style('fill', 'black')
+                    .style('opacity', '0.05')
+                    .style('visibility', 'hidden');
+                  }       
+                }
+              
+                //add the col background
+                svg.append('rect')
+                .attr('id', 'bg-col-' + colindex)
+                .attr('class', 'bg-col')
+                .attr('x', (colindex) * gridSize['w'])
+                .attr('y', 0)
+                .attr('width', gridSize['w'])
+                .attr('height', gridSize['h'] * eachcol_temp.length)
+                .style('fill', 'black')
+                .style('opacity', '0.05')
+                .style('visibility', 'hidden');
+
+                svg.selectAll('.rect-' + colindex)
+                .data(eachcol_temp)
+                .enter()
+                .append('rect')
+                .attr('class', 'hour bordered rect-' + colindex )
+                .attr('id', function(d, i){
+                  return 'rect-' + colindex + '-' + i;
+                })
+                .attr('colindex', colindex)
+                .attr('rowindex', function(d, i){
+                  return i;
+                })
+                .attr('bgcolindex', colindex)
+                .attr('bgrowindex', function(d, i){
+                  return i;
+                })
+                .attr('bgcolindex', colindex)
+                .attr('bgrowindex', rowindex)
+                .attr('tip', function(d, i){
+                  if(d == -2){
+                    return '无支撑';
+                  }else if(d == -1){
+                    return '支撑不明';
+                  }else if(d == 0){
+                    return '支撑但无师资';
+                  }else{
+                    return '支撑且贡献' + d +'师资';
+                  }
+                })
+                .attr('x', function(d, i){return (colindex) * gridSize['w'];})
+                .attr('y', function(d, i){return (i) * gridSize['h'];})
+                // .attr("x", function(d) { return 7 + (colindex - 1) * gridSize; })
+                // .attr("y", function(d) { return 10 + (rowindex - 1) * gridSize; })
+                .attr("rx", 4)
+                .attr("ry", 4)
+                .attr("width", gridSize['w'])
+                .attr("height", gridSize['h'])
+                .style('fill', function(d, i){
+                  if(d == -2)
+                    return 'none'
+                  else if(d == -1)
+                    return '#BDBDBD';
+                  else if(d == 0)
+                    return 'gray';
+                  return colorScale(d);}
+                )
+                .on('mouseover', function(d, i){           
+
+                  console.time("over")
+                  //highlight the row and column
+                  var colindex = d3.select(this).attr('colindex')
+                  var rowindex = d3.select(this).attr('rowindex');
+                  var bgcolindex = d3.select(this).attr('bgcolindex')
+                  var bgrowindex = d3.select(this).attr('bgrowindex');
+
+                  highlightColRow(colindex, rowindex, bgcolindex, bgrowindex);
+
+                  highlightrect = svg.select('#highlight-rect');
+                  if(highlightrect.empty() == true){
+                    svg.append('rect')
+                    .attr('id', 'highlight-rect')
+                    .attr('width', gridSize['w'])
+                    .attr("height", gridSize['h'])
+                    .attr('x', d3.select(this).attr('x'))
+                    .attr('y', d3.select(this).attr('y'))
+                    .attr('stroke', 'black')
+                    .attr('stroke-width', '2px')
+                    .attr('fill', 'none');
+                  }else{
+                    highlightrect
+                    .attr('x', d3.select(this).attr('x'))
+                    .attr('y', d3.select(this).attr('y'))
+                  }
+                  
+                  //give the hint 
+                  tipdiv
+                  // .transition()    
+                    // .duration(200)    
+                    .style("opacity", .9);  
+
+                  tipdiv.html(d3.select(this).attr("tip"))              
+                      .style("left", (d3.event.pageX + gridSize['w']) + "px")   
+                      .style("top", (d3.event.pageY + gridSize['h']) + "px");
+                      // .style('width', ());  
+                  
+
+                  console.timeEnd("over")
+
+                });        
+              };
+             
+              ///////////////////////////////////////////////////////////////////////////
+              //////////////// Create the gradient for the legend ///////////////////////
+              ///////////////////////////////////////////////////////////////////////////
+
+              //Extra scale since the color scale is interpolated
+              var countScale = d3.scale.linear()
+                .domain([minflow_temp, maxflow_temp])
+                .range([0, width])
+
+              //Calculate the variables for the temp gradient
+              var numStops = 10;
+              countRange = countScale.domain();
+              countRange[2] = countRange[1] - countRange[0];
+              countPoint = [];
+              for(var i = 0; i < numStops; i++) {
+                countPoint.push(i * countRange[2]/(numStops-1) + countRange[0]);
+              }//for i
+
+              //Create the gradient
+              svg.append("defs")
+                .append("linearGradient")
+                .attr("id", "legend-traffic")
+                .attr("x1", "0%").attr("y1", "0%")
+                .attr("x2", "100%").attr("y2", "0%")
+                .selectAll("stop") 
+                .data(d3.range(numStops))                
+                .enter().append("stop") 
+                .attr("offset", function(d,i) { 
+                  return countScale( countPoint[i] )/width;
+                })   
+                .attr("stop-color", function(d,i) { 
+                  return colorScale( countPoint[i] ); 
+                });
+
+              ///////////////////////////////////////////////////////////////////////////
+              ////////////////////////// Draw the legend ////////////////////////////////
+              ///////////////////////////////////////////////////////////////////////////
+
+              var legendWidth = Math.min(width*0.8, 400);
+              //Color Legend container
+              var legendsvg = svg.append("g")
+                .attr("class", "legendWrapper")
+                .attr("transform", "translate(" + (gridSize['w'] * colArray.length/2.) + "," + (gridSize['h'] * rowArray.length + 60) + ")");
+
+              //Draw the Rectangle
+              legendsvg.append("rect")
+                .attr("class", "legendRect")
+                .attr("x", -legendWidth/2)
+                .attr("y", 0)
+                //.attr("rx", hexRadius*1.25/2)
+                .attr("width", legendWidth)
+                .attr("height", 10)
+                .style("fill", "url(#legend-traffic)");
+                
+              //Append title
+              legendsvg.append("text")
+                .attr("class", "mono")
+                .attr("x", 0)
+                .attr("y", -10)
+                .style("text-anchor", "middle")
+                .text("支撑师资数量（个）");
+
+              // //Set scale for x-axis
+              var xScale = d3.scale.linear()
+                 .range([-legendWidth/2, legendWidth/2])
+                 .domain([minflow_temp, maxflow_temp] );
+
+              //Define x-axis
+              var xAxis = d3.svg.axis()
+                  .orient("bottom")
+                  .ticks(5)
+                  //.tickFormat(formatPercent)
+                  .scale(xScale);
+
+              //Set up X axis
+              legendsvg.append("g")
+                .attr("class", "axis")
+                .attr("transform", "translate(0," + (10) + ")")
+                .call(xAxis)
+                .style('font-size', '9pt');
+            };
+
+            heatmapChart();
+            
+            // var datasetpicker = d3.select("#dataset-picker").selectAll(".dataset-button")
+            //   .data(datasets);
+
+            // datasetpicker.enter()
+            //   .append("input")
+            //   .attr("value", function(d){ return "Dataset " + d })
+            //   .attr("type", "button")
+            //   .attr("class", "dataset-button")
+            //   .on("click", function(d) {
+            //     heatmapChart(d);
+            //   });
+
+
+            function sortColRank(){
+              var sortedColNameList_rank = [];
+              var sortedRankList = [...colRankSet].sort(function(a, b){return a - b;});
+
+              console.log(' sort rank ', sortedRankList);
+
+              for (var i = 0; i < sortedRankList.length; i ++) {
+                var rank = sortedRankList[i];
+                for(var index in colArray){
+                  console.log('col xx', index);
+                  if(colArray[index]['rank'] === rank)
+                    sortedColNameList_rank.push(colArray[index]['name'])
+                }
+              };
+              return sortedColNameList_rank;
+            }
+
+            function clickColRank(){
+              sortedColNameList = sortColRank();
+              console.log(" click col rank 1 ", colArray.length, sortedColNameList.length);        
+              for (var i = 0; i < sortedColNameList.length; i++){
+                moveCol(sortedColNameList[i], i);
+              };
+            }
+
+            function moveCol(colName, index){
+              var colIndex = colNameList.indexOf(colName);
+              
+              //label
+              d3.select('#col-text-' + colIndex)
+              .transition().duration(250)
+              .style("transform", function(){
+                return  "translate(" + (index+0.5) * gridSize['w'] + "px, 0px)" +  " rotate(-45deg)";
+              })
+
+              //bar & label
+              d3.select('#col-bar-' + colIndex)   
+              .transition().duration(250)     
+              .attr("x", function(){
+                return index * gridSize['w']; 
+              });              
+              d3.select('#col-bartext-' + colIndex)
+              .transition().duration(250)
+              .attr("x", function(d, i){
+                return index * gridSize['w']; 
+              });
+
+              //matrix cells
+
+              // //matrix cells
+              for (var i = 0; i < sortedRowNameList.length; i ++) {
+                rowName = sortedRowNameList[i];
+                rowIndex = rowNameList.indexOf(rowName);
+
+                d3.select('#rect-' + colIndex + '-' + rowIndex)
+                .transition().duration(250)
+                .attr('colindex', index)               
+                .attr('x', function(){
+                  return index * gridSize['w'];
+                });
+              }
+
+            }
+      });
+   
+    </script>
+  </body>
+</html>
